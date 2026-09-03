@@ -1,0 +1,97 @@
+`timescale 1ns / 1ps
+
+module testbench;
+
+    // Testbench Signals
+    logic        i_Clk;
+    logic        i_Write_Enable;
+    logic [31:0] i_Address;
+    logic [31:0] i_Data;
+    logic [31:0] o_Data;
+
+    // Instantiate Unit Under Test (UUT)
+    RISCV_DMEM uut (
+        .i_Clk(i_Clk),
+        .i_Write_Enable(i_Write_Enable),
+        .i_Address(i_Address),
+        .i_Data(i_Data),
+        .o_Data(o_Data)
+    );
+
+    // 100 MHz Clock (10ns period)
+    always #5 i_Clk = ~i_Clk;
+
+    initial begin
+        // Initialize Signals
+        i_Clk = 0;
+        i_Write_Enable = 0;
+        i_Address = 32'h0;
+        i_Data = 32'h0;
+
+        #10;
+        $display("========================================");
+        $display("   STARTING DMEM STANDALONE TESTBENCH   ");
+        $display("========================================");
+
+        // --------------------------------------------------------
+        // Test 1: Write Word 0xDEADBEEF to Address 0x0000_0004
+        // --------------------------------------------------------
+        @(posedge i_Clk);
+        i_Write_Enable = 1;
+        i_Address = 32'h0000_0004;
+        i_Data = 32'hDEADBEEF;
+
+        // --------------------------------------------------------
+        // Test 2: Write Word 0x12345678 to Address 0x0000_0008
+        // --------------------------------------------------------
+        @(posedge i_Clk);
+        i_Address = 32'h0000_0008;
+        i_Data = 32'h12345678;
+
+        // Disable Write Enable
+        @(posedge i_Clk);
+        i_Write_Enable = 0;
+        i_Data = 32'h0;
+
+        // --------------------------------------------------------
+        // Test 3: Read back Address 0x0000_0004
+        // --------------------------------------------------------
+        i_Address = 32'h0000_0004;
+        #1; // Delay for combinational read
+        if (o_Data === 32'hDEADBEEF)
+            $display("[PASS] Addr 0x04 -> Expected: 0xDEADBEEF, Got: 0x%h", o_Data);
+        else
+            $display("[FAIL] Addr 0x04 -> Expected: 0xDEADBEEF, Got: 0x%h", o_Data);
+
+        // --------------------------------------------------------
+        // Test 4: Read back Address 0x0000_0008
+        // --------------------------------------------------------
+        i_Address = 32'h0000_0008;
+        #1;
+        if (o_Data === 32'h12345678)
+            $display("[PASS] Addr 0x08 -> Expected: 0x12345678, Got: 0x%h", o_Data);
+        else
+            $display("[FAIL] Addr 0x08 -> Expected: 0x12345678, Got: 0x%h", o_Data);
+
+        // --------------------------------------------------------
+        // Test 5: Ensure Write-Enable prevents unwanted writes
+        // --------------------------------------------------------
+        @(posedge i_Clk);
+        i_Write_Enable = 0;
+        i_Address = 32'h0000_0004;
+        i_Data = 32'hFFFFFFFF; // Should NOT overwrite
+
+        @(posedge i_Clk);
+        #1;
+        if (o_Data === 32'hDEADBEEF)
+            $display("[PASS] WE=0 Check -> Addr 0x04 correctly unchanged: 0x%h", o_Data);
+        else
+            $display("[FAIL] WE=0 Check -> Addr 0x04 was overwritten: 0x%h", o_Data);
+
+        $display("========================================");
+        $display("       DMEM TESTBENCH COMPLETE          ");
+        $display("========================================");
+        $finish;
+    end
+
+endmodule
