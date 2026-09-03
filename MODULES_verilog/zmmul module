@@ -1,0 +1,30 @@
+`timescale 1ns / 1ps
+
+module zmmul_unit (
+    input  wire [2:0]  funct3,
+    input  wire [31:0] operand_a, // rs1
+    input  wire [31:0] operand_b, // rs2
+    output reg  [31:0] result
+);
+
+    wire signed [63:0] prod_ss;
+    wire signed [63:0] prod_su;
+    wire        [63:0] prod_uu;
+
+    // 64-bit Full Partial Products
+    assign prod_ss = $signed(operand_a) * $signed(operand_b);
+    assign prod_su = $signed(operand_a) * $signed({1'b0, operand_b});
+    assign prod_uu = operand_a * operand_b;
+
+    // Combinational Output Mux based on funct3
+    always @(*) begin
+        case (funct3)
+            3'b000:  result = prod_ss[31:0];  // MUL    (Signed x Signed Lower)
+            3'b001:  result = prod_ss[63:32]; // MULH   (Signed x Signed Upper)
+            3'b010:  result = prod_su[63:32]; // MULHSU (Signed x Unsigned Upper)
+            3'b011:  result = prod_uu[63:32]; // MULHU  (Unsigned x Unsigned Upper)
+            default: result = 32'h0;
+        endcase
+    end
+
+endmodule
