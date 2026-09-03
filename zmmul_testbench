@@ -1,0 +1,101 @@
+`timescale 1ns / 1ps
+
+module testbench;
+
+    reg  [2:0]  funct3;
+    reg  [31:0] operand_a;
+    reg  [31:0] operand_b;
+    wire [31:0] result;
+
+    integer pass_count = 0;
+    integer fail_count = 0;
+    integer test_num   = 0;
+    integer i;
+
+    zmmul_unit uut (
+        .funct3(funct3),
+        .operand_a(operand_a),
+        .operand_b(operand_b),
+        .result(result)
+    );
+
+    initial begin
+      $dumpfile("testbench.vcd");
+      $dumpvars(0, testbench);
+    end
+
+    // Automated Golden Model Task
+    task run_test(
+        input [2:0]  t_funct3,
+        input [31:0] t_op_a,
+        input [31:0] t_op_b
+    );
+        reg signed [63:0] exp_ss;
+        reg signed [63:0] exp_su;
+        reg        [63:0] exp_uu;
+        reg        [31:0] exp_res;
+        reg [63:0] op_name; // Operation label string
+        begin
+            test_num = test_num + 1;
+
+            // Drive Stimulus
+            funct3    = t_funct3;
+            operand_a = t_op_a;
+            operand_b = t_op_b;
+            #10; // Settle time
+
+            // Golden Reference Math & Dynamic Operation Tagging
+            exp_ss = $signed(t_op_a) * $signed(t_op_b);
+            exp_su = $signed(t_op_a) * $signed({1'b0, t_op_b});
+            exp_uu = t_op_a * t_op_b;
+
+            case (t_funct3)
+                3'b000: begin exp_res = exp_ss[31:0];  op_name = "MUL";    end
+                3'b001: begin exp_res = exp_ss[63:32]; op_name = "MULH";   end
+                3'b010: begin exp_res = exp_su[63:32]; op_name = "MULHSU"; end
+                3'b011: begin exp_res = exp_uu[63:32]; op_name = "MULHU";  end
+                default: begin exp_res = 32'h0;        op_name = "UNKNOWN";end
+            endcase
+
+            // Evaluation
+            if (result === exp_res) begin
+                $display("[PASS] Test #%02d [%-6s] A=0x%h, B=0x%h -> Result=0x%h",
+                         test_num, op_name, t_op_a, t_op_b, result);
+                pass_count = pass_count + 1;
+            end else begin
+                $display("[FAIL] Test #%02d [%-6s] A=0x%h, B=0x%h -> Got 0x%h, Expected 0x%h",
+                         test_num, op_name, t_op_a, t_op_b, result, exp_res);
+                fail_count = fail_count + 1;
+            end
+        end
+    endtask
+
+    initial begin
+        $display("=======================================================================");
+        $display("           STARTING AUTOMATED ZMMUL EXTENSION TESTBENCH                ");
+        $display("=======================================================================");
+
+        // Directed Edge Cases
+        run_test(3'b000, 32'h00000005, 32'h00000006); // 5 * 6
+        run_test(3'b000, 32'hFFFFFFFF, 32'h00000005); // -1 * 5
+        run_test(3'b001, 32'h7FFFFFFF, 32'h7FFFFFFF); // Signed Max * Signed Max
+        run_test(3'b001, 32'h80000000, 32'h00000002); // Signed Min * 2
+        run_test(3'b010, 32'hFFFFFFFF, 32'hFFFFFFFF); // Signed (-1) * Unsigned (Max)
+        run_test(3'b011, 32'hFFFFFFFF, 32'hFFFFFFFF); // Unsigned Max * Unsigned Max
+
+        // Automated Sweep Loop Across All 4 Instructions with Random Inputs
+        $display("-----------------------------------------------------------------------");
+        $display("Running Automated Loop Across All Instruction Types ($random data)...");
+        $display("-----------------------------------------------------------------------");
+        for (i = 0; i < 20; i = i + 1) begin
+            run_test(i[1:0], $random, $random);
+        end
+
+        $display("=======================================================================");
+        $display("TEST SUMMARY: %0d PASSED, %0d FAILED OUT OF %0d TESTS", pass_count, fail_count, test_num);
+        $display("=======================================================================");
+        #10;
+        $finish;
+    end
+
+endmodule
