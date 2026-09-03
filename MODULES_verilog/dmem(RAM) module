@@ -1,0 +1,20 @@
+module RISCV_DMEM (
+    input [31:0] i_Data,  
+    input [31:0] i_Address,  
+    input i_Write_Enable,  
+    input i_Clk,       
+    output [31:0] o_Data 
+);  
+    /* 4KB SRAM */
+  reg [31:0] r_Contents [0:1023];
+    
+    /* Synchronous Write */ 
+    always @(posedge i_Clk) begin
+        if (i_Write_Enable) begin
+            r_Contents[i_Address[9:0]] <= i_Data;
+        end
+    end
+    
+    /* Asynchronous Read */
+    assign o_Data = r_Contents[i_Address[9:0]];
+endmodule
