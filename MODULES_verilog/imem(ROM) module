@@ -1,0 +1,18 @@
+module RISCV_IMEM (
+    input [31:0] i_Address,     
+    output reg [31:0] o_Instruction   
+);
+    always @(*) begin
+        case (i_Address)
+            32'h400000: o_Instruction = 32'h00300293;
+            32'h400004: o_Instruction = 32'h00400313;
+            32'h400008: o_Instruction = 32'h0051a023;
+            32'h40000c: o_Instruction = 32'h0061a223;
+            32'h400010: o_Instruction = 32'h0001a503;
+            32'h400014: o_Instruction = 32'h0041a583;
+            32'h400018: o_Instruction = 32'h00b50533;
+            32'h40001c: o_Instruction = 32'h0000006f;
+            default: o_Instruction = 32'h0;
+        endcase
+    end
+endmodule
