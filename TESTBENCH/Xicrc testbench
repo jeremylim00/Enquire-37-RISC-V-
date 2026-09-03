@@ -1,0 +1,126 @@
+`timescale 1ns / 1ps
+
+module testbench;
+
+    reg  [2:0]  funct3;
+    reg  [31:0] crc_state;
+    reg  [31:0] data_in;
+    wire [31:0] next_crc;
+
+    integer pass_count = 0;
+    integer fail_count = 0;
+    integer test_num   = 0;
+    integer i;
+
+    xicrc_unit uut (
+        .funct3(funct3),
+        .crc_state(crc_state),
+        .data_in(data_in),
+        .next_crc(next_crc)
+    );
+
+    initial begin
+      $dumpfile("testbench.vcd");
+      $dumpvars(0, testbench);
+    end
+
+    // Reference Function: Byte-level CRC calculation
+    function [31:0] ref_crc32_byte(input [31:0] cur_crc, input [7:0] byte_in);
+        integer k;
+        reg [31:0] crc;
+        begin
+            crc = cur_crc ^ {24'b0, byte_in};
+            for (k = 0; k < 8; k = k + 1) begin
+                if (crc[0])
+                    crc = (crc >> 1) ^ 32'hEDB88320;
+                else
+                    crc = crc >> 1;
+            end
+            ref_crc32_byte = crc;
+        end
+    endfunction
+
+    // Reference Function: Word-level CRC calculation
+    function [31:0] ref_crc32_word(input [31:0] cur_crc, input [31:0] word_in);
+        reg [31:0] crc;
+        begin
+            crc = ref_crc32_byte(cur_crc, word_in[7:0]);
+            crc = ref_crc32_byte(crc,     word_in[15:8]);
+            crc = ref_crc32_byte(crc,     word_in[23:16]);
+            crc = ref_crc32_byte(crc,     word_in[31:24]);
+            ref_crc32_word = crc;
+        end
+    endfunction
+
+    // Automated Evaluation Task
+    task run_test(
+        input [2:0]  t_funct3,
+        input [31:0] t_state,
+        input [31:0] t_data
+    );
+        reg [31:0] exp_crc;
+        reg [63:0] op_name; // Operation label string
+        begin
+            test_num = test_num + 1;
+
+            // Drive Stimulus
+            funct3    = t_funct3;
+            crc_state = t_state;
+            data_in   = t_data;
+            #10; // Settle time
+
+            // Golden Reference Evaluation & Dynamic Operation Tagging
+            case (t_funct3)
+                3'b000: begin
+                    exp_crc = ref_crc32_byte(t_state, t_data[7:0]);
+                    op_name = "CRC32B";
+                end
+                3'b010: begin
+                    exp_crc = ref_crc32_word(t_state, t_data);
+                    op_name = "CRC32W";
+                end
+                default: begin
+                    exp_crc = t_state;
+                    op_name = "UNKNOWN";
+                end
+            endcase
+
+            // Evaluation
+            if (next_crc === exp_crc) begin
+                $display("[PASS] Test #%02d [%-6s] State=0x%h, Data=0x%h -> NextCRC=0x%h",
+                         test_num, op_name, t_state, t_data, next_crc);
+                pass_count = pass_count + 1;
+            end else begin
+                $display("[FAIL] Test #%02d [%-6s] State=0x%h, Data=0x%h -> Got 0x%h, Expected 0x%h",
+                         test_num, op_name, t_state, t_data, next_crc, exp_crc);
+                fail_count = fail_count + 1;
+            end
+        end
+    endtask
+
+    initial begin
+        $display("=======================================================================");
+        $display("           STARTING AUTOMATED XICRC EXTENSION TESTBENCH                ");
+        $display("=======================================================================");
+
+        // Directed Test Cases
+        run_test(3'b000, 32'hFFFFFFFF, 32'h00000031); // CRC32B on ASCII '1'
+        run_test(3'b010, 32'hFFFFFFFF, 32'h12345678); // CRC32W on 0x12345678
+
+        // Automated Loop Across Instruction Types ($random data)
+        $display("-----------------------------------------------------------------------");
+        $display("Running Automated Loop Across All Instruction Types ($random data)...");
+        $display("-----------------------------------------------------------------------");
+        for (i = 0; i < 20; i = i + 1) begin
+            // Alternates dynamically between funct3 = 3'b000 (CRC32B) and 3'b010 (CRC32W)
+            run_test((i[0] == 0) ? 3'b000 : 3'b010, $random, $random);
+        end
+
+        $display("=======================================================================");
+        $display("TEST SUMMARY: %0d PASSED, %0d FAILED OUT OF %0d TESTS", pass_count, fail_count, test_num);
+        $display("=======================================================================");
+        #10;
+        $finish;
+    end
+
+endmodule
