@@ -1,0 +1,63 @@
+`timescale 1ns / 1ps
+
+module testbench;
+
+   // Testbench Signals
+    reg  [31:0] i_Address;
+    wire [31:0] o_Instruction;
+
+    // Instantiate Unit Under Test (UUT)
+    RISCV_IMEM uut (
+        .i_Address(i_Address),
+        .o_Instruction(o_Instruction)
+    );
+
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    // Helper task to check instructions without using SystemVerilog structs
+    task check_instruction;
+        input [31:0] addr;
+        input [31:0] expected_inst;
+        input [256*8-1:0] asm_note; // String stored as wide vector
+        begin
+            i_Address = addr;
+            #5; // Wait for combinational logic propagation
+
+            if (o_Instruction === expected_inst) begin
+                $display("[PASS] Addr: 0x%h | Inst: 0x%h | RISC-V: %0s", 
+                          addr, o_Instruction, asm_note);
+                pass_count = pass_count + 1;
+            end else begin
+                $display("[FAIL] Addr: 0x%h | Expected: 0x%h | Got: 0x%h | %0s", 
+                          addr, expected_inst, o_Instruction, asm_note);
+                fail_count = fail_count + 1;
+            end
+        end
+    endtask
+
+    initial begin
+        $display("=========================================================================");
+        $display("                   STARTING RISCV_IMEM TESTBENCH                         ");
+        $display("=========================================================================");
+
+        // Test all mapped memory addresses
+        check_instruction(32'h00400000, 32'h00300293, "addi x5, x0, 3");
+        check_instruction(32'h00400004, 32'h00400313, "addi x6, x0, 4");
+        check_instruction(32'h00400008, 32'h0051a023, "sw   x5, 0(x3)");
+        check_instruction(32'h0040000c, 32'h0061a223, "sw   x6, 4(x3)");
+        check_instruction(32'h00400010, 32'h0001a503, "lw   x10, 0(x3)");
+        check_instruction(32'h00400014, 32'h0041a583, "lw   x11, 4(x3)");
+        check_instruction(32'h00400018, 32'h00b50533, "add  x10, x10, x11");
+        check_instruction(32'h0040001c, 32'h0000006f, "jal  x0, 0 (loop)");
+        
+        // Test unmapped address for default case
+        check_instruction(32'h00400020, 32'h00000000, "Unmapped (default zero)");
+
+        $display("=========================================================================");
+        $display(" TEST RESULTS: %0d PASSED, %0d FAILED", pass_count, fail_count);
+        $display("=========================================================================");
+        $finish;
+    end
+
+endmodule
