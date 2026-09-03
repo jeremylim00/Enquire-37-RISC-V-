@@ -1,0 +1,46 @@
+`timescale 1ns / 1ps
+
+module xicrc_unit (
+    input  wire [2:0]  funct3,
+    input  wire [31:0] crc_state, // Current CRC accumulator
+    input  wire [31:0] data_in,   // Data payload
+    output reg  [31:0] next_crc
+);
+
+    parameter [31:0] POLY = 32'hEDB88320; // Ethernet CRC-32 (Bit-reflected)
+
+    function [31:0] crc32_byte(input [31:0] cur_crc, input [7:0] byte_in);
+        integer k;
+        reg [31:0] crc;
+        begin
+            crc = cur_crc ^ {24'b0, byte_in};
+            for (k = 0; k < 8; k = k + 1) begin
+                if (crc[0])
+                    crc = (crc >> 1) ^ POLY;
+                else
+                    crc = crc >> 1;
+            end
+            crc32_byte = crc;
+        end
+    endfunction
+
+    function [31:0] crc32_word(input [31:0] cur_crc, input [31:0] word_in);
+        reg [31:0] crc;
+        begin
+            crc = crc32_byte(cur_crc, word_in[7:0]);
+            crc = crc32_byte(crc,     word_in[15:8]);
+            crc = crc32_byte(crc,     word_in[23:16]);
+            crc = crc32_byte(crc,     word_in[31:24]);
+            crc32_word = crc;
+        end
+    endfunction
+
+    always @(*) begin
+        case (funct3)
+            3'b000:  next_crc = crc32_byte(crc_state, data_in[7:0]); // CRC32B (Byte)
+            3'b010:  next_crc = crc32_word(crc_state, data_in);      // CRC32W (Word)
+            default: next_crc = crc_state;
+        endcase
+    end
+
+endmodule
