@@ -1,0 +1,94 @@
+`timescale 1ns / 1ps
+
+// Top wrapper module matching 32-bit RISC-V bus sizes
+module load_store_unit (
+    input  wire [2:0]  funct3,
+    input  wire [1:0]  addr_offset,
+    input  wire [31:0] reg_wdata,
+    input  wire [31:0] dmem_rdata,
+    output wire [31:0] dmem_wdata,
+    output wire [31:0] cpu_rdata
+);
+
+    LoadStoreUnit u_lsu (
+        .funct3(funct3),
+        .addr_offset(addr_offset),
+        .reg_wdata(reg_wdata),
+        .dmem_rdata(dmem_rdata),
+        .dmem_wdata(dmem_wdata),
+        .cpu_rdata(cpu_rdata)
+    );
+
+endmodule
+
+
+module LoadStoreUnit (
+    input  wire [2:0]  funct3,       // Instruction funct3 field (inst[14:12])
+    input  wire [1:0]  addr_offset,  // Lower 2 bits of target address (addr[1:0])
+    input  wire [31:0] reg_wdata,    // Store data coming from RS2 register
+    input  wire [31:0] dmem_rdata,   // Raw 32-bit word read from Data Memory
+    output reg  [31:0] dmem_wdata,   // Aligned 32-bit word sent to Data Memory
+    output reg  [31:0] cpu_rdata     // Sign/Zero-extended data sent to Destination Register (rd)
+);
+
+    // ------------------------------------------------------------------
+    // 1. Store Data Alignment (RS2 -> Memory Write Data)
+    // ------------------------------------------------------------------
+    always @(*) begin
+        case (funct3)
+            3'b000: begin // SB (Store Byte)
+                case (addr_offset)
+                    2'b00: dmem_wdata = {dmem_rdata[31:8],  reg_wdata[7:0]};
+                    2'b01: dmem_wdata = {dmem_rdata[31:16], reg_wdata[7:0], dmem_rdata[7:0]};
+                    2'b10: dmem_wdata = {dmem_rdata[31:24], reg_wdata[7:0], dmem_rdata[15:0]};
+                    2'b11: dmem_wdata = {reg_wdata[7:0],    dmem_rdata[23:0]};
+                endcase
+            end
+            3'b001: begin // SH (Store Halfword)
+                case (addr_offset[1])
+                    1'b0:  dmem_wdata = {dmem_rdata[31:16], reg_wdata[15:0]};
+                    1'b1:  dmem_wdata = {reg_wdata[15:0],   dmem_rdata[15:0]};
+                endcase
+            end
+            default: dmem_wdata = reg_wdata; // SW (Store Word)
+        endcase
+    end
+
+    // ------------------------------------------------------------------
+    // 2. Load Data Sign / Zero Extension (Memory Read Data -> CPU Register)
+    // ------------------------------------------------------------------
+    always @(*) begin
+        case (funct3)
+            3'b000: begin // LB (Load Byte Signed)
+                case (addr_offset)
+                    2'b00: cpu_rdata = {{24{dmem_rdata[7]}},  dmem_rdata[7:0]};
+                    2'b01: cpu_rdata = {{24{dmem_rdata[15]}}, dmem_rdata[15:8]};
+                    2'b10: cpu_rdata = {{24{dmem_rdata[23]}}, dmem_rdata[23:16]};
+                    2'b11: cpu_rdata = {{24{dmem_rdata[31]}}, dmem_rdata[31:24]};
+                endcase
+            end
+            3'b001: begin // LH (Load Halfword Signed)
+                case (addr_offset[1])
+                    1'b0:  cpu_rdata = {{16{dmem_rdata[15]}}, dmem_rdata[15:0]};
+                    1'b1:  cpu_rdata = {{16{dmem_rdata[31]}}, dmem_rdata[31:16]};
+                endcase
+            end
+            3'b100: begin // LBU (Load Byte Unsigned)
+                case (addr_offset)
+                    2'b00: cpu_rdata = {24'b0, dmem_rdata[7:0]};
+                    2'b01: cpu_rdata = {24'b0, dmem_rdata[15:8]};
+                    2'b10: cpu_rdata = {24'b0, dmem_rdata[23:16]};
+                    2'b11: cpu_rdata = {24'b0, dmem_rdata[31:24]};
+                endcase
+            end
+            3'b101: begin // LHU (Load Halfword Unsigned)
+                case (addr_offset[1])
+                    1'b0:  cpu_rdata = {16'b0, dmem_rdata[15:0]};
+                    1'b1:  cpu_rdata = {16'b0, dmem_rdata[31:16]};
+                endcase
+            end
+            default: cpu_rdata = dmem_rdata; // LW (Load Word)
+        endcase
+    end
+
+endmodule
